@@ -40,12 +40,14 @@ export default function ChatbotTool() {
 
   useEffect(() => {
     if (activeThread) {
+      console.log('ChatbotTool: activeThread changed. ID:', activeThread.id, 'Model:', activeThread.model, 'Style:', activeThread.style);
       setSelectedModel(activeThread.model || staticAvailableModels[0].value);
       setResponseStyle(activeThread.style || 'normal');
     }
   }, [activeThread]);
 
   const handleSendMessage = async () => {
+    console.log('ChatbotTool: handleSendMessage called. ActiveThread ID:', activeThread?.id, 'Input:', inputMessage);
     if (!activeThread || (!inputMessage.trim() && !uploadFile)) return;
 
     const userMessage: ChatMessage = {
@@ -74,39 +76,43 @@ export default function ChatbotTool() {
             { type: 'image_url', image_url: { url: dataUrl } }
           ];
           addMessage(activeThread.id, { role: 'user', content });
-          updateThread(activeThread.id, { model: selectedModel });
 
+          const apiPayloadForImage = {
+            messages: [...activeThread.messages, { role: 'user', content }],
+            model: selectedModel,
+            style: responseStyle,
+          };
+          console.log('ChatbotTool: Sending to /api/chat. Payload:', apiPayloadForImage);
           const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: [...activeThread.messages, { role: 'user', content }],
-              model: selectedModel,
-              style: responseStyle,
-            })
+            body: JSON.stringify(apiPayloadForImage)
           });
           const result = await response.json();
+          console.log('ChatbotTool: Received from /api/chat. Result:', result);
           addMessage(activeThread.id, { role: 'assistant', content: result.reply });
         };
         reader.readAsDataURL(uploadFile);
       } else {
-        const userMessage: ChatMessage = {
+        const userMessageText: ChatMessage = { // Renamed to avoid conflict with outer userMessage
           role: 'user',
           content: inputMessage.trim()
         };
-        addMessage(activeThread.id, userMessage);
-        updateThread(activeThread.id, { model: selectedModel });
+        addMessage(activeThread.id, userMessageText);
 
+        const apiPayloadForText = {
+          messages: [...activeThread.messages, userMessageText],
+          model: selectedModel,
+          style: responseStyle,
+        };
+        console.log('ChatbotTool: Sending to /api/chat. Payload:', apiPayloadForText);
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [...activeThread.messages, userMessage],
-            model: selectedModel,
-            style: responseStyle,
-          })
+          body: JSON.stringify(apiPayloadForText)
         });
         const result = await response.json();
+        console.log('ChatbotTool: Received from /api/chat. Result:', result);
         addMessage(activeThread.id, { role: 'assistant', content: result.reply });
 
         setInputMessage('');
@@ -175,7 +181,17 @@ export default function ChatbotTool() {
             <div className="flex gap-2">
               <div className="rounded-lg bg-gray-700 px-2 py-1 flex items-center">
                 <Fingerprint className="w-4 h-4 mr-1 text-gray-400" />
-                <Select value={responseStyle} onValueChange={setResponseStyle} className="text-sm w-full">
+                <Select
+                  value={responseStyle}
+                  onValueChange={(newStyle) => {
+                    console.log('ChatbotTool: Response style changed to:', newStyle);
+                    setResponseStyle(newStyle);
+                    if (activeThread) {
+                      updateThread(activeThread.id, { style: newStyle });
+                    }
+                  }}
+                  className="text-sm w-full"
+                >
                   <SelectTrigger className="bg-transparent border-none p-0 h-auto min-w-[60px] text-gray-300 focus:ring-0">
                     <SelectValue placeholder="normal" />
                   </SelectTrigger>
@@ -188,7 +204,17 @@ export default function ChatbotTool() {
               </div>
               <div className="rounded-lg bg-gray-700 px-2 py-1 flex items-center">
                 <Brain className="w-4 h-4 mr-1 text-gray-400" />
-                <Select value={selectedModel} onValueChange={setSelectedModel} className="text-sm w-full">
+                <Select
+                  value={selectedModel}
+                  onValueChange={(newModel) => {
+                    console.log('ChatbotTool: Model changed to:', newModel);
+                    setSelectedModel(newModel);
+                    if (activeThread) {
+                      updateThread(activeThread.id, { model: newModel });
+                    }
+                  }}
+                  className="text-sm w-full"
+                >
                   <SelectTrigger className="bg-transparent border-none p-0 h-auto min-w-[90px] text-gray-300 focus:ring-0">
                     <SelectValue placeholder="Mistral Small 3" />
                   </SelectTrigger>

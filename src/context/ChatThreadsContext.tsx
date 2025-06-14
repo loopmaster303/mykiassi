@@ -22,13 +22,22 @@ export const ChatThreadsProvider = ({ children }: { children: ReactNode }) => {
 
   // Threads aus DB laden
   const loadThreads = async () => {
-    const all = await db.threads.toArray();
-    setThreads(all);
-    if (all.length > 0 && !activeThreadId) setActiveThreadId(all[0].id);
-    if (all.length === 0) setActiveThreadId(null);
+    try {
+      const all = await db.threads.toArray();
+      setThreads(all);
+      if (all.length > 0 && !activeThreadId) {
+        setActiveThreadId(all[0].id);
+      } else if (all.length === 0) {
+        setActiveThreadId(null);
+      }
+    } catch (error) {
+      console.error("Error in loadThreads:", error);
+    }
   };
 
-  useEffect(() => { loadThreads(); }, []);
+  useEffect(() => {
+    loadThreads();
+  }, []); // Consider dependencies if activeThreadId changes should re-trigger selection
 
   // Thread anlegen
   const createThread = async (): Promise<string> => {
@@ -44,41 +53,86 @@ export const ChatThreadsProvider = ({ children }: { children: ReactNode }) => {
       memory: [],
       updatedAt: Date.now(),
     };
-    await db.threads.add(newThread);
-    await loadThreads();
-    setActiveThreadId(id);
-    return id;
+    try {
+      await db.threads.add(newThread);
+      console.log('ChatContext: Thread created:', newThread.id);
+      await loadThreads(); // Reloads threads and potentially activeThreadId logic
+      setActiveThreadId(id); // Explicitly set new thread as active
+      return id;
+    } catch (error) {
+      console.error("Error in createThread:", error);
+      return ''; // Return empty string or handle error as appropriate
+    }
   };
 
-  const setActiveThread = (id: string) => setActiveThreadId(id);
+  const setActiveThread = (id: string) => {
+    console.log('ChatContext: Setting active thread to:', id);
+    setActiveThreadId(id);
+  };
 
   // Message hinzufügen
   const addMessage = async (threadId: string, message: ChatMessage) => {
-    const thread = await db.threads.get(threadId);
-    if (!thread) return;
-    const updated = {
-      ...thread,
-      messages: [...thread.messages, message],
-      updatedAt: Date.now(),
-    };
-    await db.threads.put(updated);
-    await loadThreads();
+    try {
+      const thread = await db.threads.get(threadId);
+      if (!thread) {
+        console.error("Error in addMessage: Thread not found");
+        return;
+      }
+      const updated = {
+        ...thread,
+        messages: [...thread.messages, message],
+        updatedAt: Date.now(),
+      };
+      await db.threads.put(updated);
+      console.log('ChatContext: Message added to thread:', threadId, 'New message:', message);
+      await loadThreads();
+    } catch (error) {
+      console.error("Error in addMessage:", error);
+    }
   };
 
   // Thread updaten
   const updateThread = async (threadId: string, data: Partial<Omit<ChatThread, 'id'>>) => {
-    const thread = await db.threads.get(threadId);
-    if (!thread) return;
-    const updated = { ...thread, ...data, updatedAt: Date.now() };
-    await db.threads.put(updated);
-    await loadThreads();
+    try {
+      const thread = await db.threads.get(threadId);
+      if (!thread) {
+        console.error("Error in updateThread: Thread not found");
+        return;
+      }
+      const updated = { ...thread, ...data, updatedAt: Date.now() };
+      await db.threads.put(updated);
+      console.log('ChatContext: Thread updated:', threadId, 'Data:', data);
+      await loadThreads();
+    } catch (error) {
+      console.error("Error in updateThread:", error);
+    }
   };
 
   // Thread löschen
   const deleteThread = async (threadId: string) => {
-    await db.threads.delete(threadId);
-    await loadThreads();
-    setActiveThreadId((prevId) => (prevId === threadId ? null : prevId));
+    try {
+      const wasActive = activeThreadId === threadId;
+      await db.threads.delete(threadId);
+      console.log('ChatContext: Thread deleted:', threadId);
+
+      let newActiveThreadIdAfterDeletion = activeThreadId; // Default to current if not changed
+      if (wasActive) {
+        const remainingThreads = await db.threads.toArray(); // Get fresh list
+        if (remainingThreads.length > 0) {
+          newActiveThreadIdAfterDeletion = remainingThreads[0].id;
+          setActiveThreadId(newActiveThreadIdAfterDeletion);
+        } else {
+          newActiveThreadIdAfterDeletion = null;
+          setActiveThreadId(null);
+        }
+        console.log('ChatContext: New active thread ID after deletion:', newActiveThreadIdAfterDeletion);
+      }
+
+      await loadThreads();
+
+    } catch (error) {
+      console.error("Error in deleteThread:", error);
+    }
   };
 
   const activeThread = threads.find(t => t.id === activeThreadId) || null;
