@@ -46,24 +46,24 @@ export default function ChatbotTool() {
   }, [activeThread]);
 
   const handleSendMessage = async () => {
-    if (!activeThread || (!inputMessage.trim() && !uploadFile)) return;
+  if (!activeThread || (!inputMessage.trim() && !uploadFile)) return;
 
-    const userMessage: ChatMessage = {
-      role: 'user',
-      content: inputMessage.trim()
-    };
+  const userMessage: ChatMessage = {
+    role: 'user',
+    content: inputMessage.trim()
+  };
 
-    if (activeThread.title.startsWith('Thread') && inputMessage.trim()) {
-      const titleResponse = await fetch('/api/chat/title', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...activeThread.messages, userMessage] }),
-      });
-      const { title } = await titleResponse.json();
-      updateThread(activeThread.id, { title });
-    }
+  if (activeThread.title.startsWith('Thread') && inputMessage.trim()) {
+    const titleResponse = await fetch('/api/chat/title', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [...activeThread.messages, userMessage] }),
+    });
+    const { title } = await titleResponse.json();
+    updateThread(activeThread.id, { title });
+  }
 
-    setLoading(true);
+  setLoading(true);
     try {
       if (uploadFile) {
         const reader = new FileReader();
@@ -134,8 +134,8 @@ export default function ChatbotTool() {
   );
 
   return (
-    <div className="flex flex-col min-h-screen bg-black justify-between">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[100px]">
+    <div className="flex flex-col min-h-screen bg-background justify-between">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[180px]">
         {activeThread.messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-muted-foreground">Noch keine Nachrichten im aktuellen Chat.</p>
@@ -160,70 +160,71 @@ export default function ChatbotTool() {
           ))
         )}
       </div>
-      
-      <div className="w-full flex justify-center items-end">
-        <div className="rounded-2xl bg-gray-800/80 border border-gray-700 shadow-lg p-4 w-full max-w-2xl flex items-center justify-between min-h-[150px] mb-8 backdrop-blur-sm">
-          <div className="flex-1 flex flex-col">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Nachricht eingeben..."
-              className="w-full bg-transparent text-sm outline-none text-gray-300 placeholder:text-gray-300 px-3 py-2 rounded-lg border border-gray-600 mb-2"
-            />
-            <div className="flex gap-2">
-              <div className="rounded-lg bg-gray-700 px-2 py-1 flex items-center">
-                <Fingerprint className="w-4 h-4 mr-1 text-gray-400" />
-                <Select value={responseStyle} onValueChange={setResponseStyle} className="text-sm w-full">
-                  <SelectTrigger className="bg-transparent border-none p-0 h-auto min-w-[60px] text-gray-300 focus:ring-0">
-                    <SelectValue placeholder="normal" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-700 text-white border-gray-600 w-full">
-                    {['normal', 'concise', 'detailed', 'formal', 'casual', 'coder', 'creative', 'brainstorm', 'unrestricted', 'wifey'].map((style) => (
-                      <SelectItem key={style} value={style} className="hover:bg-gray-600">{style}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="rounded-lg bg-gray-700 px-2 py-1 flex items-center">
-                <Brain className="w-4 h-4 mr-1 text-gray-400" />
-                <Select value={selectedModel} onValueChange={setSelectedModel} className="text-sm w-full">
-                  <SelectTrigger className="bg-transparent border-none p-0 h-auto min-w-[90px] text-gray-300 focus:ring-0">
-                    <SelectValue placeholder="Mistral Small 3" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-700 text-white border-gray-600 w-full">
-                    {staticAvailableModels.map((m) => (
-                      <SelectItem key={m.value} value={m.value} className="hover:bg-gray-600">{m.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+
+      {/* Floating, zentrierte Eingabe-Card */}
+      <div className="fixed left-1/2 bottom-10 -translate-x-1/2 w-full max-w-2xl z-50">
+        {uploadPreview && (
+          <div className="mb-2 flex justify-end">
+            <img src={uploadPreview} alt="Preview" className="max-w-[200px] rounded-md" />
           </div>
-          <div className="flex flex-col items-center gap-2">
-            <Button
-              onClick={handleSendMessage}
-              disabled={loading}
-              className="w-10 h-10 rounded-full bg-white flex items-center justify-center mb-2"
-            >
-              <Send className="w-5 h-5 text-black" />
-            </Button>
-            <button
-              type="button"
-              title="Bildmodus umschalten"
-              className="rounded-full w-10 h-10 bg-gray-700 flex items-center justify-center"
-              onClick={() => setIsImageMode(!isImageMode)}
-            >
-              <ImagePlay className="w-5 h-5 text-gray-400" />
-            </button>
-            <label
-              className="rounded-full w-10 h-10 bg-gray-700 flex items-center justify-center cursor-pointer"
-            >
-              <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-              <Paperclip className="w-5 h-5 text-gray-400" />
-            </label>
+        )}
+        <div className="bg-card/90 shadow-2xl rounded-2xl px-4 py-2 w-full flex flex-row items-end border border-border">
+          <div className="flex flex-row gap-1">
+            <Select value={responseStyle} onValueChange={setResponseStyle}>
+              <SelectTrigger className="rounded-full min-w-[88px] max-w-[120px] px-2 py-1.5 bg-background text-sm font-medium flex items-center gap-1">
+                <Fingerprint className="w-6 h-6 text-muted-foreground" />
+                <SelectValue placeholder="Style" />
+              </SelectTrigger>
+              <SelectContent className="bg-background border-border">
+                {[
+                  'normal', 'concise', 'detailed', 'formal', 'casual',
+                  'coder', 'creative', 'brainstorm', 'unrestricted', 'wifey'
+                ].map((style) => (
+                  <SelectItem key={style} value={style}>{style}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedModel} onValueChange={setSelectedModel}>
+              <SelectTrigger className="rounded-full min-w-[88px] max-w-[120px] px-2 py-1.5 bg-background text-sm font-medium flex items-center gap-1">
+                <Brain className="w-6 h-6 text-muted-foreground" />
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent className="bg-background border-border">
+                {staticAvailableModels.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          <input
+            type="text"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+            placeholder={isImageMode ? 'Prompt für Bild...' : 'Nachricht eingeben...'}
+            className="flex-1 mx-1 bg-transparent text-lg outline-none px-3 py-2 rounded-full"
+          />
+          <button
+            type="button"
+            title="Bildmodus umschalten"
+            className="rounded-full w-10 h-10 bg-background hover:bg-accent flex items-center justify-center transition ml-0.5"
+            onClick={() => setIsImageMode(!isImageMode)}
+          >
+            <ImagePlay className="w-6 h-6 text-muted-foreground" />
+          </button>
+          <label
+            className="rounded-full w-10 h-10 bg-background hover:bg-accent flex items-center justify-center transition cursor-pointer ml-0.5"
+          >
+            <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+            <Paperclip className="w-6 h-6 text-muted-foreground" />
+          </label>
+          <Button
+            onClick={handleSendMessage}
+            disabled={loading}
+            className="ml-1 w-12 h-12 rounded-full bg-white shadow-lg flex items-center justify-center"
+          >
+            <Send className="w-7 h-7 text-black" />
+          </Button>
         </div>
       </div>
     </div>

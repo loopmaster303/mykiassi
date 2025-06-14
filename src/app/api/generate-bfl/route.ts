@@ -3,120 +3,69 @@ import { NextResponse } from 'next/server';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function POST(request: Request) {
-  console.log('\n--- NEUE ANFRAGE an /api/generate-bfl ---');
   try {
-    const body = await request.json();
-    console.log('1. Frontend-Body empfangen:', body);
+    // Hole prompt und aspect_ratio aus dem Frontend
+    const { prompt, aspect_ratio } = await request.json();
 
-    const { prompt, model, input_image, ...restParams } = body; // KORRIGIERT: input_image statt image
-
-    if (!prompt && !input_image) { // KORRIGIERT: input_image statt image
-      console.error('Fehler: Weder Prompt noch Bild vorhanden.');
-      return NextResponse.json({ error: 'Prompt oder Bild ist erforderlich.' }, { status: 400 });
+    if (!prompt || !aspect_ratio) {
+      return NextResponse.json({ error: 'Prompt und Seitenverhältnis sind erforderlich.' }, { status: 400 });
     }
 
     const apiKey = process.env.BFL_API_KEY;
-    if (!apiKey) {
-      console.error('Fehler: BFL_API_KEY nicht gefunden.');
-      throw new Error('BFL_API_KEY nicht gefunden.');
-    }
+    if (!apiKey) throw new Error('BFL_API_KEY nicht gefunden.');
 
-    // Korrekte URL-Konstruktion
-    let jobStartUrl;
-    if (input_image) {
-      jobStartUrl = `https://api.bfl.ai/v1/flux-kontext-pro`; // Explicitly set for editing
-    } else {
-      jobStartUrl = `https://api.bfl.ai/v1/${model}`; // For generation, use the model name
-    }
+    // HART den Endpunkt eintragen!
+    const jobStartUrl = 'https://api.bfl.ai/v1/flux-kontext-pro';
+    const payload = { prompt, aspect_ratio };
 
-    const payload: any = { prompt, ...restParams };
-    
-    if (input_image && typeof input_image === 'string' && input_image.startsWith('data:')) { // KORRIGIERT
-      const base64Image = input_image.split(',')[1];
-      payload.input_image = base64Image; // KORRIGIERT: input_image verwenden
-      console.log('2a. Bilddaten zu reinem Base64 konvertiert.');
-    }
-    
-    console.log(`2b. Sende Payload an BFL (${jobStartUrl}):`, JSON.stringify(payload, null, 2));
+    // Debug: Logge die Anfrage
+    console.log('Starte Job auf:', jobStartUrl, payload);
 
+    // Anfrage an BFL schicken
     const startJobResponse = await fetch(jobStartUrl, {
       method: 'POST',
       headers: {
         'accept': 'application/json',
         'Content-Type': 'application/json',
-        'x-key': apiKey, // Korrekt: kleingeschrieben
+        'x-key': apiKey,
       },
       body: JSON.stringify(payload),
     });
 
-    console.log(`3. Antwort-Status von BFL (Job Start): ${startJobResponse.status}`);
-
     if (!startJobResponse.ok) {
-        const errorData = await startJobResponse.json();
-        console.error('4a. FEHLER von BFL (Job Start):', errorData);
-        throw new Error(`BFL API Fehler (Job Start): ${JSON.stringify(errorData)}`);
+      const errorData = await startJobResponse.json().catch(() => ({}));
+      return NextResponse.json({ error: errorData?.detail || 'Fehler beim Start.' }, { status: 500 });
     }
 
     const job = await startJobResponse.json();
-    console.log('4b. Erfolgreiche Antwort von BFL (Job Start):', job);
-    
-    const jobId = job.id;
-    
-    let finalResult;
+    const pollingUrl = job.polling_url;
+    let finalResult = null;
 
-    for (let i = 0; i < 30; i++) {
+    // Polling-Schleife (max. 2 Minuten)
+    for (let i = 0; i < 60; i++) {
       await sleep(2000);
-      
-      let fetchUrl;
-      if (job.polling_url) {
-        // Check if polling_url already contains the 'id' parameter
-        if (job.polling_url.includes('?id=')) {
-          fetchUrl = job.polling_url;
-        } else {
-          // If polling_url exists but doesn't contain 'id', append it
-          fetchUrl = `${job.polling_url}?id=${jobId}`;
-        }
-      } else {
-        // If polling_url is not provided, use the default and append 'id'
-        fetchUrl = `https://api.bfl.ai/v1/get_result?id=${jobId}`;
-      }
-
-      console.log(`5. Polling bei: ${fetchUrl} (Versuch ${i + 1})`); // Use fetchUrl for logging
-      const getResultResponse = await fetch(fetchUrl, {
-        method: 'GET',
-        headers: { 
-          'accept': 'application/json',
-          'x-key': apiKey  // Korrekt: kleingeschrieben
-        }
-      });
-
-      console.log(`6. Polling-Antwort-Status: ${getResultResponse.status}`);
-      if (!getResultResponse.ok) {
-        const errorData = await getResultResponse.json();
-        console.error('Polling-Fehler:', errorData);
-        throw new Error('BFL API Fehler (Status Abfrage).');
-      }
-      
-      const result = await getResultResponse.json();
-      console.log(`7. Polling-Ergebnis: Status ist '${result.status}'`);
-
-      if (result.status === 'Ready') {
-        console.log('8. JOB ERFOLGREICH! Lade Bild herunter...');
+      const pollResponse = await fetch(pollingUrl, { headers: { 'x-key': apiKey } });
+      if (!pollResponse.ok) continue;
+      const result = await pollResponse.json();
+      if (result.status === 'Ready' || result.status === 'succeeded') {
         finalResult = result;
-        break; 
+        break;
       }
       if (result.status === 'Failed' || result.status === 'Error') {
-        console.error('Job fehlgeschlagen:', result);
-        throw new Error(`BFL API Job ist fehlgeschlagen: ${JSON.stringify(result)}`);
+        return NextResponse.json({ error: `BFL API Job fehlgeschlagen: ${JSON.stringify(result)}` }, { status: 500 });
       }
     }
 
-    if (!finalResult) throw new Error('BFL API Job hat zu lange gedauert.');
-    
+    if (!finalResult) {
+      return NextResponse.json({ error: 'Timeout: Kein Ergebnis von BFL.' }, { status: 504 });
+    }
+
+    // Bild holen & base64 zurückgeben
     const temporaryImageUrl = finalResult.result.sample;
     const imageResponse = await fetch(temporaryImageUrl);
-    if (!imageResponse.ok) throw new Error('Konnte finales Bild nicht herunterladen.');
-
+    if (!imageResponse.ok) {
+      return NextResponse.json({ error: 'Bild konnte nicht geladen werden.' }, { status: 500 });
+    }
     const imageBuffer = await imageResponse.arrayBuffer();
     const imageBase64 = Buffer.from(imageBuffer).toString('base64');
     const imageMimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
@@ -126,8 +75,6 @@ export async function POST(request: Request) {
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unbekannter Fehler.';
-    console.error('--- ENDE DER ANFRAGE MIT FEHLER ---', errorMessage);
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-

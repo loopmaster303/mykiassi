@@ -128,7 +128,12 @@ export async function POST(request: Request) {
       reply = 'Keine Antwort erhalten.';
     }
     
-    return NextResponse.json({ reply });
+    return NextResponse.json({
+      reply,
+      usedModel: apiModel,
+      usedStyle: style,
+      usedPrompt: stylePrompt
+    });
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Ein unbekannter Fehler ist aufgetreten.';
