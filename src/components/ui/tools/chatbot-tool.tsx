@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useChatThreads } from '../../../context/ChatThreadsContext';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
+// Removed Button import as we'll use a simpler clickable div/button for Send
 import { ImagePlay, Paperclip, Brain, Fingerprint, Send } from 'lucide-react';
 
 export interface ChatMessage {
@@ -27,7 +27,7 @@ export default function ChatbotTool() {
   const [mounted, setMounted] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
-  const [isImageMode, setIsImageMode] = useState(false);
+  const [isImageMode, setIsImageMode] = useState(false); // State for ImagePlay, though not fully used
   const [inputMessage, setInputMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState(activeThread?.model || staticAvailableModels[0].value);
   const [responseStyle, setResponseStyle] = useState(activeThread?.style || 'normal');
@@ -56,13 +56,25 @@ export default function ChatbotTool() {
     };
 
     if (activeThread.title.startsWith('Thread') && inputMessage.trim()) {
-      const titleResponse = await fetch('/api/chat/title', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...activeThread.messages, userMessage] }),
-      });
-      const { title } = await titleResponse.json();
-      updateThread(activeThread.id, { title });
+      try {
+        const titleResponse = await fetch('/api/chat/title', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: [...activeThread.messages, userMessage] }),
+        });
+        if (titleResponse.ok) {
+          const { title } = await titleResponse.json();
+          if (typeof title === 'string' && title.trim()) {
+            updateThread(activeThread.id, { title: title.trim() });
+          } else {
+            console.error('Error generating thread title: Received invalid title format.', title);
+          }
+        } else {
+          console.error('Error generating thread title:', titleResponse.status, await titleResponse.text());
+        }
+      } catch (error) {
+        console.error('Failed to fetch thread title:', error);
+      }
     }
 
     setLoading(true);
@@ -94,7 +106,7 @@ export default function ChatbotTool() {
         };
         reader.readAsDataURL(uploadFile);
       } else {
-        const userMessageText: ChatMessage = { // Renamed to avoid conflict with outer userMessage
+        const userMessageText: ChatMessage = {
           role: 'user',
           content: inputMessage.trim()
         };
@@ -121,6 +133,8 @@ export default function ChatbotTool() {
       console.error("Fehler beim Senden:", err);
     } finally {
       setLoading(false);
+      setUploadFile(null); // Clear file after sending
+      setUploadPreview(null); // Clear preview
     }
   };
 
@@ -141,7 +155,7 @@ export default function ChatbotTool() {
 
   return (
     <div className="flex flex-col min-h-screen bg-black justify-between">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[100px]">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[100px]"> {/* Adjusted pb for new input area height */}
         {activeThread.messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-muted-foreground">Noch keine Nachrichten im aktuellen Chat.</p>
@@ -165,90 +179,99 @@ export default function ChatbotTool() {
             </div>
           ))
         )}
+         {uploadPreview && (
+          <div className="fixed bottom-[120px] left-1/2 transform -translate-x-1/2 z-20">
+            <img src={uploadPreview} alt="Upload Preview" className="max-h-40 rounded-md border border-gray-600 shadow-lg" />
+            <button
+              onClick={() => { setUploadFile(null); setUploadPreview(null);}}
+              className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-1 text-xs w-6 h-6 flex items-center justify-center"
+            >&times;</button>
+          </div>
+        )}
       </div>
       
+      {/* Chat Input Island */}
       <div className="w-full flex justify-center items-end">
-        <div className="rounded-2xl bg-gray-800/80 border border-gray-700 shadow-lg p-4 w-full max-w-2xl flex items-center justify-between min-h-[150px] mb-8 backdrop-blur-sm">
-          <div className="flex-1 flex flex-col">
+        <div className="rounded-2xl bg-black/60 backdrop-blur-sm border border-gray-700 shadow-lg p-3 w-full max-w-2xl mb-4"> {/* Adjusted padding and margin */}
+          {/* Top Part: Input Field & Send Button */}
+          <div className="flex items-center gap-2">
             <input
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
               placeholder="Nachricht eingeben..."
-              className="w-full bg-transparent text-sm outline-none text-gray-300 placeholder:text-gray-300 px-3 py-2 rounded-lg border border-gray-600 mb-2"
+              className="flex-grow bg-transparent border-none outline-none text-gray-300 placeholder:text-gray-400 p-2 text-sm"
             />
-            <div className="flex gap-2">
-              <div className="rounded-lg bg-gray-700 px-2 py-1 flex items-center">
-                <Fingerprint className="w-4 h-4 mr-1 text-gray-400" />
-                <Select
-                  value={responseStyle}
-                  onValueChange={(newStyle) => {
-                    console.log('ChatbotTool: Response style changed to:', newStyle);
-                    setResponseStyle(newStyle);
-                    if (activeThread) {
-                      updateThread(activeThread.id, { style: newStyle });
-                    }
-                  }}
-                  className="text-sm w-full"
-                >
-                  <SelectTrigger className="bg-transparent border-none p-0 h-auto min-w-[60px] text-gray-300 focus:ring-0">
-                    <SelectValue placeholder="normal" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-700 text-white border-gray-600 w-full">
-                    {['normal', 'concise', 'detailed', 'formal', 'casual', 'coder', 'creative', 'brainstorm', 'unrestricted', 'wifey'].map((style) => (
-                      <SelectItem key={style} value={style} className="hover:bg-gray-600">{style}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="rounded-lg bg-gray-700 px-2 py-1 flex items-center">
-                <Brain className="w-4 h-4 mr-1 text-gray-400" />
-                <Select
-                  value={selectedModel}
-                  onValueChange={(newModel) => {
-                    console.log('ChatbotTool: Model changed to:', newModel);
-                    setSelectedModel(newModel);
-                    if (activeThread) {
-                      updateThread(activeThread.id, { model: newModel });
-                    }
-                  }}
-                  className="text-sm w-full"
-                >
-                  <SelectTrigger className="bg-transparent border-none p-0 h-auto min-w-[90px] text-gray-300 focus:ring-0">
-                    <SelectValue placeholder="Mistral Small 3" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-700 text-white border-gray-600 w-full">
-                    {staticAvailableModels.map((m) => (
-                      <SelectItem key={m.value} value={m.value} className="hover:bg-gray-600">{m.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col items-center gap-2">
-            <Button
-              onClick={handleSendMessage}
-              disabled={loading}
-              className="w-10 h-10 rounded-full bg-white flex items-center justify-center mb-2"
-            >
-              <Send className="w-5 h-5 text-black" />
-            </Button>
             <button
-              type="button"
-              title="Bildmodus umschalten"
-              className="rounded-full w-10 h-10 bg-gray-700 flex items-center justify-center"
-              onClick={() => setIsImageMode(!isImageMode)}
+              onClick={handleSendMessage}
+              disabled={loading || (!inputMessage.trim() && !uploadFile)}
+              className="p-2 text-white disabled:text-gray-500"
             >
-              <ImagePlay className="w-5 h-5 text-gray-400" />
+              <Send className="w-5 h-5" />
             </button>
-            <label
-              className="rounded-full w-10 h-10 bg-gray-700 flex items-center justify-center cursor-pointer"
-            >
-              <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-              <Paperclip className="w-5 h-5 text-gray-400" />
-            </label>
+          </div>
+
+          {/* Bottom Part: Selectors & Other Action Buttons */}
+          <div className="flex justify-between items-center mt-2 pt-2"> {/* REMOVED border-t border-gray-700/60 */}
+            {/* Bottom-Left Group: Selectors */}
+            <div className="flex items-center gap-1"> {/* Reduced gap */}
+              <Select
+                value={responseStyle}
+                onValueChange={(newStyle) => {
+                  console.log('ChatbotTool: Response style changed to:', newStyle);
+                  setResponseStyle(newStyle);
+                  if (activeThread) {
+                    updateThread(activeThread.id, { style: newStyle });
+                  }
+                }}
+              >
+                <SelectTrigger className="bg-transparent border-none p-1 h-auto text-gray-300 focus:ring-0 hover:text-white">
+                  <Fingerprint className="w-5 h-5" />
+                </SelectTrigger>
+                <SelectContent side="top" align="start" className="bg-gray-800 text-white border-gray-700">
+                  {['normal', 'concise', 'detailed', 'formal', 'casual', 'coder', 'creative', 'brainstorm', 'unrestricted', 'wifey'].map((style) => (
+                    <SelectItem key={style} value={style} className="hover:bg-gray-700 focus:bg-gray-700">{style}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={selectedModel}
+                onValueChange={(newModel) => {
+                  console.log('ChatbotTool: Model changed to:', newModel);
+                  setSelectedModel(newModel);
+                  if (activeThread) {
+                    updateThread(activeThread.id, { model: newModel });
+                  }
+                }}
+              >
+                <SelectTrigger className="bg-transparent border-none p-1 h-auto text-gray-300 focus:ring-0 hover:text-white">
+                  <Brain className="w-5 h-5" />
+                </SelectTrigger>
+                <SelectContent side="top" align="start" className="bg-gray-800 text-white border-gray-700">
+                  {staticAvailableModels.map((m) => (
+                    <SelectItem key={m.value} value={m.value} className="hover:bg-gray-700 focus:bg-gray-700">{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Bottom-Right Group: Other Action Buttons */}
+            <div className="flex items-center gap-1"> {/* Reduced gap */}
+              <button
+                type="button"
+                title="Bildmodus umschalten"
+                onClick={() => setIsImageMode(!isImageMode)} // isImageMode state not currently used elsewhere
+                className="p-2 text-gray-400 hover:text-white"
+              >
+                <ImagePlay className="w-5 h-5" />
+              </button>
+              <label className="p-2 text-gray-400 hover:text-white cursor-pointer">
+                <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                <Paperclip className="w-5 h-5" />
+              </label>
+            </div>
           </div>
         </div>
       </div>
