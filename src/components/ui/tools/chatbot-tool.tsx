@@ -165,7 +165,7 @@ export default function ChatbotTool() {
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-xl p-4 ${
                 msg.role === 'user'
-                  ? 'bg-blue-600 text-white shadow-md' // New user message style
+                  ? 'bg-gray-700 text-white shadow-md border border-gray-800' // Updated user message style
                   : 'bg-card border border-border shadow-sm'
               }`}>
                 {Array.isArray(msg.content)
