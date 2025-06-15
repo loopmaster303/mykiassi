@@ -85,7 +85,7 @@ export default function ChatbotTool() {
           const errorText = await response.text();
           console.error('Error generating image:', response.status, errorText);
           addMessage(activeThread.id, { role: 'assistant', content: `Sorry, image generation failed. Status: ${response.status}` });
-          return; // Exits the try block, finally will run
+          return;
         }
 
         const imageBlob = await response.blob();
@@ -97,14 +97,13 @@ export default function ChatbotTool() {
             { type: 'image_url', image_url: { url: imageUrl } }
           ]
         });
-        setIsImageMode(false); // Switch back to chat mode
+        setIsImageMode(false);
 
       } else {
         // B. Existing Chat Logic (Text and File Upload)
-        const currentInputMessage = inputMessage.trim(); // Capture before potential title generation clears it
+        const currentInputMessage = inputMessage.trim();
         const userMessageForTitle: ChatMessage = { role: 'user', content: currentInputMessage };
 
-        // 1. Title Generation (if applicable)
         if (activeThread.title.startsWith('Thread') && currentInputMessage) {
           try {
             const titleResponse = await fetch('/api/chat/title', {
@@ -127,17 +126,15 @@ export default function ChatbotTool() {
           }
         }
 
-        // 2. File Upload Logic
         if (uploadFile) {
           const reader = new FileReader();
-          reader.onload = async () => { // This is async
+          reader.onload = async () => {
             const dataUrl = reader.result as string;
             const userMessageContentWithImage: ChatMessage['content'] = [
               { type: 'text', text: currentInputMessage || 'Bitte beschreibe dieses Bild.' },
               { type: 'image_url', image_url: { url: dataUrl } }
             ];
 
-            // Important: Use a snapshot of messages before adding this user's message
             const messagesForApi = [...activeThread.messages, { role: 'user', content: userMessageContentWithImage }];
             addMessage(activeThread.id, { role: 'user', content: userMessageContentWithImage });
 
@@ -145,7 +142,7 @@ export default function ChatbotTool() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                messages: messagesForApi, // Send the constructed list
+                messages: messagesForApi,
                 model: selectedModel,
                 style: responseStyle,
               })
@@ -165,10 +162,7 @@ export default function ChatbotTool() {
           };
           reader.readAsDataURL(uploadFile);
         } else {
-          // 3. Text Message Logic (only if not a file upload)
           const userMessageForTextChat: ChatMessage = { role: 'user', content: currentInputMessage };
-
-          // Important: Use a snapshot of messages before adding this user's message
           const messagesForApi = [...activeThread.messages, userMessageForTextChat];
           addMessage(activeThread.id, userMessageForTextChat);
 
@@ -176,7 +170,7 @@ export default function ChatbotTool() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              messages: messagesForApi, // Send the constructed list
+              messages: messagesForApi,
               model: selectedModel,
               style: responseStyle,
             })
@@ -194,16 +188,12 @@ export default function ChatbotTool() {
         }
       }
     } catch (err) {
-      // C. Outer catch block
       console.error("Error in handleSendMessage:", err);
       if (activeThread) {
         addMessage(activeThread.id, { role: 'assistant', content: 'An unexpected error occurred.' });
       }
     } finally {
       setLoading(false);
-      // uploadFile and uploadPreview are reset inside reader.onload for file uploads,
-      // or if they were not part of this specific message send.
-      // If it was only an image generation, these wouldn't be touched here, which is fine.
     }
   };
 
@@ -223,7 +213,7 @@ export default function ChatbotTool() {
   );
 
   return (
-    <div className="flex flex-col min-h-screen bg-black justify-between">
+    <div className="flex flex-col min-h-screen bg-background text-foreground justify-between"> {/* MODIFIED: bg-black to bg-background */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[120px] max-w-2xl mx-auto w-full">
         {activeThread.messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
@@ -232,10 +222,10 @@ export default function ChatbotTool() {
         ) : (
           activeThread.messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-xl p-4 ${
+              <div className={`max-w-[80%] rounded-xl p-4 shadow-md ${ // Added shadow-md here for consistency
                 msg.role === 'user'
-                  ? 'bg-gray-700 text-white shadow-md border border-gray-800'
-                  : 'bg-card border border-border shadow-sm'
+                  ? 'bg-gray-200 text-gray-900 border border-gray-300 dark:bg-gray-700 dark:text-white dark:border-gray-800' // MODIFIED
+                  : 'bg-card text-card-foreground border border-border' // Removed shadow-sm as it's now common
               }`}>
                 {Array.isArray(msg.content)
                   ? msg.content.map((part, i) =>
@@ -248,19 +238,20 @@ export default function ChatbotTool() {
             </div>
           ))
         )}
-         {uploadPreview && !isImageMode && ( // Only show preview if not in image gen mode and preview exists
+         {uploadPreview && !isImageMode && (
           <div className="fixed bottom-[120px] left-1/2 transform -translate-x-1/2 z-20">
             <img src={uploadPreview} alt="Upload Preview" className="max-h-40 rounded-md border border-gray-600 shadow-lg" />
             <button
               onClick={() => { setUploadFile(null); setUploadPreview(null);}}
-              className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-1 text-xs w-6 h-6 flex items-center justify-center"
+              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 w-5 h-5 flex items-center justify-center text-xs" // Adjusted padding and size
             >&times;</button>
           </div>
         )}
       </div>
       
       <div className="w-full flex justify-center items-end">
-        <div className="rounded-2xl bg-black/60 backdrop-blur-sm border border-gray-700 shadow-lg p-3 w-full max-w-2xl mb-4">
+        {/* MODIFIED: Chat Island Container */}
+        <div className="rounded-2xl bg-white/80 dark:bg-black/60 backdrop-blur-sm border border-gray-300 dark:border-gray-700 shadow-lg p-3 w-full max-w-2xl mb-4">
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -268,12 +259,14 @@ export default function ChatbotTool() {
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
               placeholder={isImageMode ? "Bild generieren..." : "Nachricht eingeben..."}
-              className="flex-grow bg-transparent border-none outline-none text-gray-300 placeholder:text-gray-400 p-2 text-sm"
+              // MODIFIED: Text Input
+              className="flex-grow bg-transparent border-none outline-none text-gray-900 dark:text-gray-300 placeholder:text-gray-500 dark:placeholder:text-gray-400 p-2 text-sm"
             />
             <button
               onClick={handleSendMessage}
               disabled={loading || (isImageMode ? !inputMessage.trim() : (!inputMessage.trim() && !uploadFile))}
-              className="p-2 text-white disabled:text-gray-500"
+              // MODIFIED: Send Button Icon
+              className="p-2 text-gray-800 dark:text-white disabled:text-gray-400 dark:disabled:text-gray-600"
             >
               <Send className="w-5 h-5" />
             </button>
@@ -291,12 +284,14 @@ export default function ChatbotTool() {
                   }
                 }}
               >
-                <SelectTrigger className="bg-transparent border-none p-1 h-auto text-gray-300 focus:ring-0 hover:text-white">
+                {/* MODIFIED: Selector Icons */}
+                <SelectTrigger className="bg-transparent border-none p-1 h-auto text-gray-700 dark:text-gray-300 hover:text-primary dark:hover:text-white focus:ring-0">
                   <Fingerprint className="w-5 h-5" />
                 </SelectTrigger>
-                <SelectContent side="top" align="start" className="bg-gray-800 text-white border-gray-700">
+                {/* MODIFIED: SelectContent Dropdowns */}
+                <SelectContent side="top" align="start" className="bg-popover text-popover-foreground border-border">
                   {['normal', 'concise', 'detailed', 'formal', 'casual', 'coder', 'creative', 'brainstorm', 'unrestricted', 'wifey'].map((style) => (
-                    <SelectItem key={style} value={style} className="hover:bg-gray-700 focus:bg-gray-700">{style}</SelectItem>
+                    <SelectItem key={style} value={style} className="hover:bg-accent focus:bg-accent dark:hover:bg-accent dark:focus:bg-accent">{style}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -311,28 +306,31 @@ export default function ChatbotTool() {
                   }
                 }}
               >
-                <SelectTrigger className="bg-transparent border-none p-1 h-auto text-gray-300 focus:ring-0 hover:text-white">
+                {/* MODIFIED: Selector Icons */}
+                <SelectTrigger className="bg-transparent border-none p-1 h-auto text-gray-700 dark:text-gray-300 hover:text-primary dark:hover:text-white focus:ring-0">
                   <Brain className="w-5 h-5" />
                 </SelectTrigger>
-                <SelectContent side="top" align="start" className="bg-gray-800 text-white border-gray-700">
+                {/* MODIFIED: SelectContent Dropdowns */}
+                <SelectContent side="top" align="start" className="bg-popover text-popover-foreground border-border">
                   {staticAvailableModels.map((m) => (
-                    <SelectItem key={m.value} value={m.value} className="hover:bg-gray-700 focus:bg-gray-700">{m.label}</SelectItem>
+                    <SelectItem key={m.value} value={m.value} className="hover:bg-accent focus:bg-accent dark:hover:bg-accent dark:focus:bg-accent">{m.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="flex items-center gap-1">
+              {/* MODIFIED: Action Icons */}
               <button
                 type="button"
                 title={isImageMode ? "Chat-Modus umschalten" : "Bildmodus umschalten"}
                 onClick={() => setIsImageMode(!isImageMode)}
-                className={`p-2 hover:text-white ${isImageMode ? 'text-blue-400' : 'text-gray-400'}`}
+                className={`p-2 rounded-full ${isImageMode ? 'text-blue-600 dark:text-blue-400 bg-blue-500/20 dark:bg-blue-500/10' : 'text-gray-600 dark:text-gray-400 hover:text-primary dark:hover:text-white'}`}
               >
                 <ImagePlay className="w-5 h-5" />
               </button>
-              {!isImageMode && ( // Only show paperclip if not in image mode
-                <label className="p-2 text-gray-400 hover:text-white cursor-pointer">
+              {!isImageMode && (
+                <label className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary dark:hover:text-white cursor-pointer rounded-full">
                   <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                   <Paperclip className="w-5 h-5" />
                 </label>
