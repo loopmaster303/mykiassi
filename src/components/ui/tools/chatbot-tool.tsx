@@ -155,7 +155,7 @@ export default function ChatbotTool() {
 
   return (
     <div className="flex flex-col min-h-screen bg-black justify-between">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[100px]"> {/* Adjusted pb for new input area height */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[120px] max-w-2xl mx-auto w-full"> {/* MODIFIED HERE */}
         {activeThread.messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-muted-foreground">Noch keine Nachrichten im aktuellen Chat.</p>
@@ -165,7 +165,7 @@ export default function ChatbotTool() {
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-xl p-4 ${
                 msg.role === 'user'
-                  ? 'bg-gradient-to-r from-purple-600 to-purple-800 text-white'
+                  ? 'bg-blue-600 text-white shadow-md' // New user message style
                   : 'bg-card border border-border shadow-sm'
               }`}>
                 {Array.isArray(msg.content)
@@ -200,7 +200,7 @@ export default function ChatbotTool() {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
-              placeholder="Nachricht eingeben..."
+              placeholder={isImageMode ? "Bild generieren..." : "Nachricht eingeben..."}
               className="flex-grow bg-transparent border-none outline-none text-gray-300 placeholder:text-gray-400 p-2 text-sm"
             />
             <button
