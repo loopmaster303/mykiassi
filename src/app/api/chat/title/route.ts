@@ -15,46 +15,77 @@ export async function POST(request: Request) {
     // Beispiel: Pollinations-Text-Endpoint oder OpenAI-Endpoint verwenden
     const apiKey = process.env.POLLINATIONS_API_KEY;
     // Pollinations OpenAI-kompatibler Text-Endpoint
-    const apiUrl = 'https://text.pollinations.ai/openai';
-    const url = `${apiUrl}`; // wir nutzen POST-Body für OpenAI-kompatible API
+    const pollinationsApiUrl = 'https://text.pollinations.ai/openai'; // Renamed apiUrl
+    // const url = `${apiUrl}`; // url variable is now pollinationsApiUrl
 
-    const payload = {
+    const payloadToPollinations = { // Renamed payload
       model: 'openai-reasoning',
       messages: [
         { role: 'system', content: 'Erstelle einen kurzen Titel (max. 5 Wörter):' },
         { role: 'user', content: promptText }
       ],
+      // temperature: 0.7, // Temperature can be added if desired
+      // max_tokens: 15, // Max tokens for a short title
     };
 
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok) {
-      const errorData = await resp.text();
-      console.error('Titel-API Fehler:', resp.status, errorData);
-      throw new Error(`Titel-API Fehler: ${resp.status}`);
-    }
-    const data = await resp.json();
-    let title = '';
-    if (Array.isArray(data.choices) && data.choices.length > 0) {
-      const choice = data.choices[0];
-      if (choice.message?.content) {
-        title = choice.message.content.trim().split('\n')[0];
-      } else if (typeof choice.text === 'string') {
-        title = choice.text.trim().split('\n')[0];
+    console.log('API Title: Sending request to Pollinations URL:', pollinationsApiUrl);
+    console.log('API Title: Payload to Pollinations:', JSON.stringify(payloadToPollinations, null, 2));
+
+      const resp = await fetch(pollinationsApiUrl, { // Used pollinationsApiUrl
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify(payloadToPollinations), // Used payloadToPollinations
+      });
+
+      if (!resp.ok) {
+        const errorText = await resp.text(); 
+        console.error('API Title: Pollinations API request failed:', resp.status, resp.statusText, errorText);
+        // title remains 'Neuer Chat'
+      } else {
+        const data = await resp.json(); // This could fail if response is not valid JSON
+        console.log('API Title: Pollinations API response data:', data); 
+        if (Array.isArray(data.choices) && data.choices.length > 0) {
+          const choice = data.choices[0];
+          let extractedTitle = ''; // Use a temporary variable for extracted title
+          if (choice.message?.content) {
+            extractedTitle = choice.message.content.trim().split('\n')[0];
+          } else if (typeof choice.text === 'string') {
+            extractedTitle = choice.text.trim().split('\n')[0];
+          }
+          
+          if (extractedTitle) { // Only assign if non-empty
+            title = extractedTitle; // Assign to the main title variable
+            // Ensure title is not too long
+            const words = title.split(' ');
+            if (words.length > 7) {
+              title = words.slice(0, 7).join(' ') + '...';
+            }
+          }
+        } else {
+          console.warn('API Title: Pollinations response does not have expected choices structure.');
+          // title remains 'Neuer Chat' or previously extracted valid title
+        }
       }
+    } catch (fetchOrProcessingError) { // Catches errors from fetch itself or resp.json() or other processing
+      console.error('API Title: Error during fetch to Pollinations or processing its response:', fetchOrProcessingError);
+      // title remains 'Neuer Chat' as it was initialized outside this try-catch
     }
-    if (!title) {
-      title = 'Neuer Chat';
+    
+    // Ensure title is not an empty string after all attempts; if so, revert to default.
+    // This also handles the case where title might have been set to an empty string during extraction.
+    if (!title.trim()) { 
+        title = 'Neuer Chat';
     }
-    return NextResponse.json({ title });
+
+    console.log('API Title: Final title being returned:', title);
+    return NextResponse.json({ title }, { status: 200 }); // Explicitly set status 200
   } catch (e) {
-    console.error('Fehler in Title-Route:', e);
+    // This outer catch handles errors like the initial request.json() failing.
+    const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred in title generation.';
+    console.error('API Title: General error in POST handler (e.g. request parsing):', errorMessage, e);
     return NextResponse.json({ error: 'Fehler bei Titelgenerierung' }, { status: 500 });
   }
 }

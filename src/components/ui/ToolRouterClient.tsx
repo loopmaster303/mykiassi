@@ -3,7 +3,6 @@
 
 import React, { useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import HomeTool from '@/components/ui/tools/home-tool';
 import ChatbotClientWrapper from '@/components/ui/tools/chatbot-tool';
 import TextToImageTool from '@/components/ui/tools/text-to-image-tool';
 import FluxKontextTool from '@/components/ui/tools/image-kontext-tool';
@@ -14,7 +13,6 @@ export default function ToolRouterClient() {
 
   const activeTool = useMemo(() => {
     switch (toolParam) {
-      case 'home':
       case 'chatbot':
       case 'simple-image-gen':
       case 'flux-kontext':
@@ -27,8 +25,6 @@ export default function ToolRouterClient() {
 
   const renderTool = () => {
     switch (activeTool) {
-      case 'home':
-        return <HomeTool />;
       case 'chatbot':
         return <ChatbotClientWrapper />;
       case 'simple-image-gen':
@@ -42,8 +38,10 @@ export default function ToolRouterClient() {
             <p className="text-muted-foreground">Dieses Feature kommt bald.</p>
           </div>
         );
+      // Since chatbot is the default, the 'home' case is no longer needed here.
+      // If a tool is not found, we could default to chatbot or show an error.
       default:
-        return <HomeTool />;
+        return <ChatbotClientWrapper />; // Default to Chatbot if toolParam is not recognized
     }
   };
 

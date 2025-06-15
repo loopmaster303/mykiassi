@@ -11,7 +11,7 @@ import ChatThreadsClient from '../components/ui/tools/ChatThreadsClient';
 function SidebarNav() {
   const searchParams = useSearchParams();
   const tool = searchParams.get('tool');
-  const { createThread } = useChatThreads();
+  const { createThread } = useChatThreads(); // hook innerhalb des Providers nutzen
 
   return (
     <nav className="space-y-2 flex-1">
@@ -22,7 +22,7 @@ function SidebarNav() {
       <div className="flex items-center justify-between">
         <Link href="/?tool=chatbot" className="block px-3 py-2 rounded-md hover:bg-accent flex-1">💬 Chatbot</Link>
         <button
-          onClick={createThread}
+          onClick={() => createThread('')}
           className="ml-2 text-accent-foreground hover:text-primary font-bold text-lg"
           title="Neuen Thread starten"
         >
@@ -31,7 +31,7 @@ function SidebarNav() {
       </div>
 
       {tool === 'chatbot' && <ChatThreadsClient />}
-
+      
       <Link href="/?tool=kalender" className="block px-3 py-2 rounded-md hover:bg-accent">📅 Kalender</Link>
     </nav>
   );
