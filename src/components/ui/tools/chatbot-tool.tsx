@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { useChatThreads } from '../../../context/ChatThreadsContext';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-// Removed Button import as we'll use a simpler clickable div/button for Send
 import { ImagePlay, Paperclip, Brain, Fingerprint, Send } from 'lucide-react';
 
 export interface ChatMessage {
@@ -27,7 +26,7 @@ export default function ChatbotTool() {
   const [mounted, setMounted] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
-  const [isImageMode, setIsImageMode] = useState(false); // State for ImagePlay, though not fully used
+  const [isImageMode, setIsImageMode] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState(activeThread?.model || staticAvailableModels[0].value);
   const [responseStyle, setResponseStyle] = useState(activeThread?.style || 'normal');
@@ -47,94 +46,164 @@ export default function ChatbotTool() {
   }, [activeThread]);
 
   const handleSendMessage = async () => {
-    console.log('ChatbotTool: handleSendMessage called. ActiveThread ID:', activeThread?.id, 'Input:', inputMessage);
-    if (!activeThread || (!inputMessage.trim() && !uploadFile)) return;
+    console.log('ChatbotTool: handleSendMessage called. ActiveThread ID:', activeThread?.id, 'Input:', inputMessage, "ImageMode:", isImageMode);
 
-    const userMessage: ChatMessage = {
-      role: 'user',
-      content: inputMessage.trim()
-    };
-
-    if (activeThread.title.startsWith('Thread') && inputMessage.trim()) {
-      try {
-        const titleResponse = await fetch('/api/chat/title', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: [...activeThread.messages, userMessage] }),
-        });
-        if (titleResponse.ok) {
-          const { title } = await titleResponse.json();
-          if (typeof title === 'string' && title.trim()) {
-            updateThread(activeThread.id, { title: title.trim() });
-          } else {
-            console.error('Error generating thread title: Received invalid title format.', title);
-          }
-        } else {
-          console.error('Error generating thread title:', titleResponse.status, await titleResponse.text());
-        }
-      } catch (error) {
-        console.error('Failed to fetch thread title:', error);
-      }
+    if (!activeThread) {
+        console.warn("handleSendMessage: No active thread.");
+        return;
+    }
+    if (!inputMessage.trim() && !uploadFile && !isImageMode) { // For chat mode, need input or file
+        console.warn("handleSendMessage: No input message or file for chat mode.");
+        return;
+    }
+    if (isImageMode && !inputMessage.trim()) { // For image mode, need input
+        console.warn("handleSendMessage: No prompt for image generation mode.");
+        return;
     }
 
     setLoading(true);
     try {
-      if (uploadFile) {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const dataUrl = reader.result as string;
-          const content: ChatMessage['content'] = [
-            { type: 'text', text: inputMessage.trim() || 'Bitte beschreibe dieses Bild.' },
-            { type: 'image_url', image_url: { url: dataUrl } }
-          ];
-          addMessage(activeThread.id, { role: 'user', content });
+      if (isImageMode) {
+        // A. Image Generation Logic
+        const prompt = inputMessage.trim();
+        if (!prompt) {
+          console.warn('ChatbotTool: Image generation prompt is empty.');
+          setLoading(false); // Ensure loading is reset
+          return;
+        }
 
-          const apiPayloadForImage = {
-            messages: [...activeThread.messages, { role: 'user', content }],
-            model: selectedModel,
-            style: responseStyle,
+        addMessage(activeThread.id, { role: 'user', content: `Image prompt: "${prompt}"` });
+        setInputMessage(''); // Clear input after capturing prompt
+
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error generating image:', response.status, errorText);
+          addMessage(activeThread.id, { role: 'assistant', content: `Sorry, image generation failed. Status: ${response.status}` });
+          return; // Exits the try block, finally will run
+        }
+
+        const imageBlob = await response.blob();
+        const imageUrl = URL.createObjectURL(imageBlob);
+        addMessage(activeThread.id, {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: `Generated image for: "${prompt}"`},
+            { type: 'image_url', image_url: { url: imageUrl } }
+          ]
+        });
+        setIsImageMode(false); // Switch back to chat mode
+
+      } else {
+        // B. Existing Chat Logic (Text and File Upload)
+        const currentInputMessage = inputMessage.trim(); // Capture before potential title generation clears it
+        const userMessageForTitle: ChatMessage = { role: 'user', content: currentInputMessage };
+
+        // 1. Title Generation (if applicable)
+        if (activeThread.title.startsWith('Thread') && currentInputMessage) {
+          try {
+            const titleResponse = await fetch('/api/chat/title', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ messages: [...activeThread.messages, userMessageForTitle] }),
+            });
+            if (titleResponse.ok) {
+              const { title } = await titleResponse.json();
+              if (typeof title === 'string' && title.trim()) {
+                updateThread(activeThread.id, { title: title.trim() });
+              } else {
+                console.error('Error generating thread title: Received invalid title format.', title);
+              }
+            } else {
+              console.error('Error generating thread title:', titleResponse.status, await titleResponse.text());
+            }
+          } catch (error) {
+            console.error('Failed to fetch thread title:', error);
+          }
+        }
+
+        // 2. File Upload Logic
+        if (uploadFile) {
+          const reader = new FileReader();
+          reader.onload = async () => { // This is async
+            const dataUrl = reader.result as string;
+            const userMessageContentWithImage: ChatMessage['content'] = [
+              { type: 'text', text: currentInputMessage || 'Bitte beschreibe dieses Bild.' },
+              { type: 'image_url', image_url: { url: dataUrl } }
+            ];
+
+            // Important: Use a snapshot of messages before adding this user's message
+            const messagesForApi = [...activeThread.messages, { role: 'user', content: userMessageContentWithImage }];
+            addMessage(activeThread.id, { role: 'user', content: userMessageContentWithImage });
+
+            const response = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: messagesForApi, // Send the constructed list
+                model: selectedModel,
+                style: responseStyle,
+              })
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error('Error in chat API (file upload):', response.status, errorText);
+              addMessage(activeThread.id, { role: 'assistant', content: `Sorry, I encountered an error. Status: ${response.status}` });
+            } else {
+              const result = await response.json();
+              addMessage(activeThread.id, { role: 'assistant', content: result.reply });
+            }
+            setInputMessage('');
+            setUploadFile(null);
+            setUploadPreview(null);
           };
-          console.log('ChatbotTool: Sending to /api/chat. Payload:', apiPayloadForImage);
+          reader.readAsDataURL(uploadFile);
+        } else {
+          // 3. Text Message Logic (only if not a file upload)
+          const userMessageForTextChat: ChatMessage = { role: 'user', content: currentInputMessage };
+
+          // Important: Use a snapshot of messages before adding this user's message
+          const messagesForApi = [...activeThread.messages, userMessageForTextChat];
+          addMessage(activeThread.id, userMessageForTextChat);
+
           const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(apiPayloadForImage)
+            body: JSON.stringify({
+              messages: messagesForApi, // Send the constructed list
+              model: selectedModel,
+              style: responseStyle,
+            })
           });
-          const result = await response.json();
-          console.log('ChatbotTool: Received from /api/chat. Result:', result);
-          addMessage(activeThread.id, { role: 'assistant', content: result.reply });
-        };
-        reader.readAsDataURL(uploadFile);
-      } else {
-        const userMessageText: ChatMessage = {
-          role: 'user',
-          content: inputMessage.trim()
-        };
-        addMessage(activeThread.id, userMessageText);
 
-        const apiPayloadForText = {
-          messages: [...activeThread.messages, userMessageText],
-          model: selectedModel,
-          style: responseStyle,
-        };
-        console.log('ChatbotTool: Sending to /api/chat. Payload:', apiPayloadForText);
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(apiPayloadForText)
-        });
-        const result = await response.json();
-        console.log('ChatbotTool: Received from /api/chat. Result:', result);
-        addMessage(activeThread.id, { role: 'assistant', content: result.reply });
-
-        setInputMessage('');
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error in chat API (text message):', response.status, errorText);
+            addMessage(activeThread.id, { role: 'assistant', content: `Sorry, I encountered an error. Status: ${response.status}` });
+          } else {
+            const result = await response.json();
+            addMessage(activeThread.id, { role: 'assistant', content: result.reply });
+          }
+          setInputMessage('');
+        }
       }
     } catch (err) {
-      console.error("Fehler beim Senden:", err);
+      // C. Outer catch block
+      console.error("Error in handleSendMessage:", err);
+      if (activeThread) {
+        addMessage(activeThread.id, { role: 'assistant', content: 'An unexpected error occurred.' });
+      }
     } finally {
       setLoading(false);
-      setUploadFile(null); // Clear file after sending
-      setUploadPreview(null); // Clear preview
+      // uploadFile and uploadPreview are reset inside reader.onload for file uploads,
+      // or if they were not part of this specific message send.
+      // If it was only an image generation, these wouldn't be touched here, which is fine.
     }
   };
 
@@ -155,7 +224,7 @@ export default function ChatbotTool() {
 
   return (
     <div className="flex flex-col min-h-screen bg-black justify-between">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[120px] max-w-2xl mx-auto w-full"> {/* MODIFIED HERE */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-[120px] max-w-2xl mx-auto w-full">
         {activeThread.messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-muted-foreground">Noch keine Nachrichten im aktuellen Chat.</p>
@@ -165,7 +234,7 @@ export default function ChatbotTool() {
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-xl p-4 ${
                 msg.role === 'user'
-                  ? 'bg-gray-700 text-white shadow-md border border-gray-800' // Updated user message style
+                  ? 'bg-gray-700 text-white shadow-md border border-gray-800'
                   : 'bg-card border border-border shadow-sm'
               }`}>
                 {Array.isArray(msg.content)
@@ -179,7 +248,7 @@ export default function ChatbotTool() {
             </div>
           ))
         )}
-         {uploadPreview && (
+         {uploadPreview && !isImageMode && ( // Only show preview if not in image gen mode and preview exists
           <div className="fixed bottom-[120px] left-1/2 transform -translate-x-1/2 z-20">
             <img src={uploadPreview} alt="Upload Preview" className="max-h-40 rounded-md border border-gray-600 shadow-lg" />
             <button
@@ -190,10 +259,8 @@ export default function ChatbotTool() {
         )}
       </div>
       
-      {/* Chat Input Island */}
       <div className="w-full flex justify-center items-end">
-        <div className="rounded-2xl bg-black/60 backdrop-blur-sm border border-gray-700 shadow-lg p-3 w-full max-w-2xl mb-4"> {/* Adjusted padding and margin */}
-          {/* Top Part: Input Field & Send Button */}
+        <div className="rounded-2xl bg-black/60 backdrop-blur-sm border border-gray-700 shadow-lg p-3 w-full max-w-2xl mb-4">
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -205,17 +272,15 @@ export default function ChatbotTool() {
             />
             <button
               onClick={handleSendMessage}
-              disabled={loading || (!inputMessage.trim() && !uploadFile)}
+              disabled={loading || (isImageMode ? !inputMessage.trim() : (!inputMessage.trim() && !uploadFile))}
               className="p-2 text-white disabled:text-gray-500"
             >
               <Send className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Bottom Part: Selectors & Other Action Buttons */}
-          <div className="flex justify-between items-center mt-2 pt-2"> {/* REMOVED border-t border-gray-700/60 */}
-            {/* Bottom-Left Group: Selectors */}
-            <div className="flex items-center gap-1"> {/* Reduced gap */}
+          <div className="flex justify-between items-center mt-2 pt-2">
+            <div className="flex items-center gap-1">
               <Select
                 value={responseStyle}
                 onValueChange={(newStyle) => {
@@ -257,20 +322,21 @@ export default function ChatbotTool() {
               </Select>
             </div>
 
-            {/* Bottom-Right Group: Other Action Buttons */}
-            <div className="flex items-center gap-1"> {/* Reduced gap */}
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                title="Bildmodus umschalten"
-                onClick={() => setIsImageMode(!isImageMode)} // isImageMode state not currently used elsewhere
-                className="p-2 text-gray-400 hover:text-white"
+                title={isImageMode ? "Chat-Modus umschalten" : "Bildmodus umschalten"}
+                onClick={() => setIsImageMode(!isImageMode)}
+                className={`p-2 hover:text-white ${isImageMode ? 'text-blue-400' : 'text-gray-400'}`}
               >
                 <ImagePlay className="w-5 h-5" />
               </button>
-              <label className="p-2 text-gray-400 hover:text-white cursor-pointer">
-                <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-                <Paperclip className="w-5 h-5" />
-              </label>
+              {!isImageMode && ( // Only show paperclip if not in image mode
+                <label className="p-2 text-gray-400 hover:text-white cursor-pointer">
+                  <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                  <Paperclip className="w-5 h-5" />
+                </label>
+              )}
             </div>
           </div>
         </div>
